@@ -158,8 +158,6 @@ def _build_data_point(
   op: str, kop: str, num_node_bits: int, num_operand_bits: List[int], 
   stub: synthesis_service_pb2_grpc.SynthesisServiceStub,
   attributes: Sequence[Tuple[str, str]] = (),
-  operand_attributes: Sequence[Tuple[str, int]] = (),
-  operand_span_attributes: Sequence[Tuple[str, int, int]] = (),
   literal_operand: Optional[int] = None) -> delay_model_pb2.DataPoint:
   """Characterize an operation via synthesis server.
 
@@ -174,15 +172,6 @@ def _build_data_point(
   Args forwarded to generate_ir_package:
     attributes: Attributes to include in the operation mnemonic. For example,
       "new_bit_count" in extend operations.
-    operand_attributes: Attributes consisting of an operand to include in the 
-      operation mnemonic. Each element of the sequence specifies the attribute
-      name and the index of the first operand (within 'operand_types').
-      For example, used for "defualt" in sel operations.
-    operand_span_attributes: Attributes consisting of 1 or more operand to include 
-      in the operation mnemonic. Each element of the sequence specifies the attribute
-      name, the index of the first operand (within 'operand_types'), and 
-      the number of operands in the span.
-      For example, used for "cases" in sel operations.
     literal_operand: Optionally specifies that the given operand number should
       be substituted with a randomly generated literal instead of a function
       parameter.
@@ -197,8 +186,6 @@ def _build_data_point(
   ir_text = op_module_generator.generate_ir_package(op, op_type,
                                                     operand_types,
                                                     attributes,
-                                                    operand_attributes,
-                                                    operand_span_attributes,
                                                     literal_operand) 
   module_name = f'{op}_{num_node_bits}'
   mod_generator_result = op_module_generator.generate_verilog_module(
@@ -334,20 +321,18 @@ def _run_select_op_and_add (
   # Why? No idea...
   for num_cases in range(2, operand_count_sweep_ceiling, operand_loop_stride):
     for bit_count in range(flat_bit_count_sweep_floor, flat_bit_count_sweep_ceiling, base_loop_stride):
-      cases_span_attribute = ('cases', 1, num_cases)
 
       # Handle differently if num_cases is a power of 2.
       select_bits = bits.min_bit_count_unsigned(num_cases-1)
       if math.pow(2, select_bits) == num_cases:
         model.data_points.append(_build_data_point(op, kop, bit_count, [select_bits] + ([bit_count] * num_cases), 
-          stub, operand_span_attributes=[cases_span_attribute]))
+          stub))
       else:
-        default_attribute = ('default', num_cases+1)
         model.data_points.append(_build_data_point(op, kop, bit_count, [select_bits] + ([bit_count] * (num_cases+1)), 
-          stub, operand_span_attributes=[cases_span_attribute], operand_attributes=[default_attribute]))
+          stub))
       if(verbose):
         print('# select_op: ' + op + ', ' + str(bit_count) + ' bits, ' + str(num_cases) + ' cases' \
-            + ' --> ' + str(model.data_points[-1]))
+            + ' --> ' + str(model.data_points[-1].delay))
 
   # Validate model
   delay_model.DelayModel(model)
@@ -368,10 +353,9 @@ def _run_one_hot_select_op_and_add (
   # Enumerate cases and bitwidth.
   for num_cases in range(2, operand_count_sweep_ceiling, operand_loop_stride):
     for bit_count in range(flat_bit_count_sweep_floor, flat_bit_count_sweep_ceiling, base_loop_stride):
-      cases_span_attribute = ('cases', 1, num_cases)
       select_bits = num_cases
       model.data_points.append(_build_data_point(op, kop, bit_count, [select_bits] + ([bit_count] * num_cases), 
-        stub, operand_span_attributes=[cases_span_attribute]))
+        stub))
       if(verbose):
         print('# one_hot_select_op: ' + op + ', ' + str(bit_count) + ' bits, ' + str(num_cases) + ' cases' \
             + ' --> ' + str(model.data_points[-1].delay))
